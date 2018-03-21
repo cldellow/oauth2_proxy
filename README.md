@@ -201,9 +201,9 @@ Usage of oauth2_proxy:
   -https-address string: <addr>:<port> to listen on for HTTPS clients (default ":443")
   -login-url string: Authentication endpoint
   -pass-access-token: pass OAuth access_token to upstream via X-Forwarded-Access-Token header
-  -pass-basic-auth: pass HTTP Basic Auth, X-Forwarded-User and X-Forwarded-Email information to upstream (default true)
+  -pass-basic-auth: pass HTTP Basic Auth, X-Forwarded-User, X-Forwarded-Groups and X-Forwarded-Email information to upstream (default true)
   -pass-host-header: pass the request Host Header to upstream (default true)
-  -pass-user-headers: pass X-Forwarded-User and X-Forwarded-Email information to upstream (default true)
+  -pass-user-headers: pass X-Forwarded-Groups, X-Forwarded-User and X-Forwarded-Email information to upstream (default true)
   -profile-url string: Profile access endpoint
   -provider string: OAuth provider (default "google")
   -proxy-prefix string: the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in) (default "/oauth2")
