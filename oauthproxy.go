@@ -28,6 +28,7 @@ var SignatureHeaders []string = []string{
 	"Date",
 	"Authorization",
 	"X-Forwarded-User",
+	"X-Forwarded-Groups",
 	"X-Forwarded-Email",
 	"X-Forwarded-Access-Token",
 	"Cookie",
@@ -39,6 +40,7 @@ type OAuthProxy struct {
 	CookieName     string
 	CSRFCookieName string
 	CookieDomain   string
+	DotCookieDomain string
 	CookieSecure   bool
 	CookieHttpOnly bool
 	CookieExpire   time.Duration
@@ -176,6 +178,7 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		CSRFCookieName: fmt.Sprintf("%v_%v", opts.CookieName, "csrf"),
 		CookieSeed:     opts.CookieSecret,
 		CookieDomain:   opts.CookieDomain,
+		DotCookieDomain: "." + opts.CookieDomain,
 		CookieSecure:   opts.CookieSecure,
 		CookieHttpOnly: opts.CookieHttpOnly,
 		CookieExpire:   opts.CookieExpire,
@@ -456,7 +459,21 @@ func getRemoteAddr(req *http.Request) (s string) {
 	return
 }
 
+func (p *OAuthProxy) GoodDomain(domain string) bool {
+	return domain == p.CookieDomain || strings.HasSuffix(domain, p.DotCookieDomain)
+}
+
 func (p *OAuthProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	domain := req.Host
+	if h, _, err := net.SplitHostPort(domain); err == nil {
+		domain = h
+	}
+	if !p.GoodDomain(domain) {
+		// reject request, to avoid lots of API requests; see RR-1635
+		p.ErrorPage(rw, 400, "Wrong Host", fmt.Sprintf("request is for host %q but this oauth proxy is configured for %q", domain, p.CookieDomain))
+		return
+	}
+
 	switch path := req.URL.Path; {
 	case path == p.RobotsPath:
 		p.RobotsTxt(rw)
@@ -567,8 +584,10 @@ func (p *OAuthProxy) OAuthCallback(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// set cookie, or deny
-	if p.Validator(session.Email) && p.provider.ValidateGroup(session.Email) {
+	groups, groupsok := p.provider.ValidateGroup(session.Email)
+	if p.Validator(session.Email) && groupsok {
 		log.Printf("%s authentication complete %s", remoteAddr, session)
+		session.Groups = groups
 		err := p.SaveSession(rw, req, session)
 		if err != nil {
 			log.Printf("%s %s", remoteAddr, err)
@@ -679,12 +698,18 @@ func (p *OAuthProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int
 	if p.PassBasicAuth {
 		req.SetBasicAuth(session.User, p.BasicAuthPassword)
 		req.Header["X-Forwarded-User"] = []string{session.User}
+		if session.Groups != nil {
+			req.Header["X-Forwarded-Groups"] = []string{strings.Join(session.Groups, "|")}
+		}
 		if session.Email != "" {
 			req.Header["X-Forwarded-Email"] = []string{session.Email}
 		}
 	}
 	if p.PassUserHeaders {
 		req.Header["X-Forwarded-User"] = []string{session.User}
+		if session.Groups != nil {
+			req.Header["X-Forwarded-Groups"] = []string{strings.Join(session.Groups, "|")}
+		}
 		if session.Email != "" {
 			req.Header["X-Forwarded-Email"] = []string{session.Email}
 		}
